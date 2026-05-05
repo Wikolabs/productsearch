@@ -37,4 +37,5 @@ services:
 
 networks:
   productsearch:
-    driver: bridge
+    external: true
+    name: productsearch-net
