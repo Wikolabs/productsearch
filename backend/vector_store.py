@@ -18,6 +18,12 @@ class PGVectorStore:
 
     @classmethod
     async def create(cls, dsn: str) -> "PGVectorStore":
+        # Ensure vector extension exists before pool registers the type codec
+        boot = await asyncpg.connect(dsn=dsn)
+        try:
+            await boot.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        finally:
+            await boot.close()
         pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=10, init=register_vector)
         store = cls(pool)
         await store._init_schema()
