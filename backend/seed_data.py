@@ -133,7 +133,7 @@ async def load_seed_products(
         for attempt in range(max_retries):
             try:
                 embedding = embed_svc.embed_product(product)
-                store.add(product, embedding)
+                await store.add(product, embedding)
                 logger.info("[%d/%d] Loaded: %s", i + 1, total, product.title)
                 break
             except ClientError as e:
@@ -145,4 +145,5 @@ async def load_seed_products(
                     raise
 
     elapsed = time.time() - start
-    logger.info("Seed loading complete: %d products in %.1fs", store.count, elapsed)
+    final_count = await store.count
+    logger.info("Seed loading complete: %d products in %.1fs", final_count, elapsed)
