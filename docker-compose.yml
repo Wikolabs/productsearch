@@ -27,8 +27,8 @@ services:
       dockerfile: Dockerfile
     container_name: productsearch-frontend
     restart: unless-stopped
-    expose:
-      - "80"
+    ports:
+      - "3032:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -37,5 +37,4 @@ services:
 
 networks:
   productsearch:
-    external: true
-    name: productsearch-net
+    driver: bridge
