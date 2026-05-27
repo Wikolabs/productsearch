@@ -1,5 +1,6 @@
 import base64
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -13,19 +14,22 @@ from config import Settings
 from embedding_service import EmbeddingService, UnsupportedImageError
 from models import ProductData, SearchRequest, SearchResult
 from seed_data import load_seed_products
-from vector_store import InMemoryVectorStore
+from vector_store import PGVectorStore
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 settings = Settings()
 embed_svc = EmbeddingService(settings)
-vector_store = InMemoryVectorStore()
 chat_svc = ChatService(settings)
+vector_store: PGVectorStore | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global vector_store
+    dsn = os.getenv("POSTGRES_URI", "postgresql://ps:ps_pgvector_2024@db:5432/productsearch")
+    vector_store = await PGVectorStore.create(dsn)
     try:
         await load_seed_products(vector_store, embed_svc)
     except Exception as e:
@@ -44,16 +48,23 @@ app.add_middleware(
 )
 
 
+def _store() -> PGVectorStore:
+    if vector_store is None:
+        raise HTTPException(503, "Database not ready")
+    return vector_store
+
+
 # --- GET /health ---
 @app.get("/health")
 async def health():
-    return {"status": "ok", "product_count": vector_store.count}
+    count = await _store().count
+    return {"status": "ok", "product_count": count}
 
 
 # --- GET /products ---
 @app.get("/products", response_model=list[ProductData])
 async def list_products():
-    return list(reversed(vector_store.products))
+    return await _store().list_all()
 
 
 # --- POST /products ---
@@ -71,25 +82,20 @@ async def add_product(
         image_base64 = base64.b64encode(content).decode()
 
     chars = [c.strip() for c in characteristics.split(",") if c.strip()]
-
     product = ProductData(
-        title=title,
-        description=description,
-        characteristics=chars,
-        price=price,
-        image_base64=image_base64,
+        title=title, description=description,
+        characteristics=chars, price=price, image_base64=image_base64,
     )
 
     try:
         embedding = embed_svc.embed_product(product)
     except UnsupportedImageError as e:
-        logger.warning("Unsupported image format: %s", e)
         raise HTTPException(415, str(e)) from e
     except GeminiAPIError as e:
         logger.error("Embedding failed: %s", e)
         raise HTTPException(502, "Embedding service unavailable") from e
 
-    vector_store.add(product, embedding)
+    await _store().add(product, embedding)
     return {"product_id": product.id}
 
 
@@ -104,7 +110,8 @@ async def update_product(
     image: UploadFile | None = File(None),
     keep_image: str = Form("false"),
 ):
-    existing = next((p for p in vector_store.products if p.id == product_id), None)
+    all_products = await _store().list_all()
+    existing = next((p for p in all_products if p.id == product_id), None)
     if not existing:
         raise HTTPException(404, "Product not found")
 
@@ -116,27 +123,21 @@ async def update_product(
         image_base64 = existing.image_base64
 
     chars = [c.strip() for c in characteristics.split(",") if c.strip()]
-
     product = ProductData(
-        id=product_id,
-        title=title,
-        description=description,
-        characteristics=chars,
-        price=price,
-        image_base64=image_base64,
+        id=product_id, title=title, description=description,
+        characteristics=chars, price=price, image_base64=image_base64,
         created_at=existing.created_at,
     )
 
     try:
         embedding = embed_svc.embed_product(product)
     except UnsupportedImageError as e:
-        logger.warning("Unsupported image format: %s", e)
         raise HTTPException(415, str(e)) from e
     except GeminiAPIError as e:
         logger.error("Embedding failed: %s", e)
         raise HTTPException(502, "Embedding service unavailable") from e
 
-    vector_store.update(product_id, product, embedding)
+    await _store().update(product_id, product, embedding)
     return {"product_id": product_id}
 
 
@@ -152,24 +153,18 @@ async def search(request: SearchRequest):
         try:
             image_description = embed_svc.describe_image(image_bytes)
         except UnsupportedImageError as e:
-            logger.warning("Unsupported image format: %s", e)
             raise HTTPException(415, str(e)) from e
         except Exception as e:
             logger.exception("Image description failed")
-            raise HTTPException(
-                502,
-                f"Service d'analyse d'image indisponible: {type(e).__name__}: {e}",
-            ) from e
+            raise HTTPException(502, f"Service d'analyse d'image indisponible: {type(e).__name__}: {e}") from e
 
     try:
-        query_embedding = embed_svc.embed_query(
-            text=request.text, image_description=image_description
-        )
+        query_embedding = embed_svc.embed_query(text=request.text, image_description=image_description)
     except GeminiAPIError as e:
         logger.error("Embedding failed: %s", e)
         raise HTTPException(502, "Service d'embedding indisponible") from e
 
-    return vector_store.search(query_embedding, top_k=settings.TOP_K_RESULTS)
+    return await _store().search(query_embedding, top_k=settings.TOP_K_RESULTS)
 
 
 # --- POST /chat ---
@@ -184,35 +179,27 @@ async def chat(request: SearchRequest):
         try:
             image_description = embed_svc.describe_image(image_bytes)
         except UnsupportedImageError as e:
-            logger.warning("Unsupported image format: %s", e)
             raise HTTPException(415, str(e)) from e
         except Exception as e:
             logger.exception("Image description failed")
-            raise HTTPException(
-                502,
-                f"Service d'analyse d'image indisponible: {type(e).__name__}: {e}",
-            ) from e
+            raise HTTPException(502, f"Service d'analyse d'image indisponible: {type(e).__name__}: {e}") from e
 
     try:
-        query_embedding = embed_svc.embed_query(
-            text=request.text, image_description=image_description
-        )
+        query_embedding = embed_svc.embed_query(text=request.text, image_description=image_description)
     except GeminiAPIError as e:
         logger.error("Embedding failed: %s", e)
         raise HTTPException(502, "Embedding service unavailable") from e
 
-    results = vector_store.search(query_embedding, top_k=settings.TOP_K_RESULTS)
+    results = await _store().search(query_embedding, top_k=settings.TOP_K_RESULTS)
     user_message = " ".join(filter(None, [request.text, image_description])) or "image search"
 
     async def event_stream():
         try:
-            async for token in chat_svc.generate_response_stream(
-                user_message, results
-            ):
+            async for token in chat_svc.generate_response_stream(user_message, results):
                 yield f"data: {token}\n\n"
             yield "data: [DONE]\n\n"
         except GroqAPIError as e:
             logger.error("Chat generation failed: %s", e)
-            yield f"data: [ERROR] Chat service unavailable\n\n"
+            yield "data: [ERROR] Chat service unavailable\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

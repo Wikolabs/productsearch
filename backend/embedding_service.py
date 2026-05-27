@@ -51,14 +51,23 @@ class EmbeddingService:
             return vector
         return vector / norm
 
-    def _embed(self, parts: list[types.Part]) -> np.ndarray:
+    def _embed(self, parts: list[types.Part], max_retries: int = 4) -> np.ndarray:
         content = types.Content(parts=parts)
-        response = self.client.models.embed_content(
-            model=self.model,
-            contents=content,
-        )
-        vector = np.array(response.embeddings[0].values, dtype=np.float32)
-        return self._normalize(vector)
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.embed_content(
+                    model=self.model,
+                    contents=content,
+                )
+                vector = np.array(response.embeddings[0].values, dtype=np.float32)
+                return self._normalize(vector)
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning("Embedding rate limited, retrying in %ds (attempt %d)...", wait, attempt + 1)
+                    time.sleep(wait)
+                else:
+                    raise
 
     def embed_product(self, product: ProductData) -> np.ndarray:
         text = self._build_product_text(product)
