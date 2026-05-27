@@ -22,30 +22,19 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" \
-            "APP_DIR=/opt/productsearch
-            GOOGLE_API_KEY='$GOOGLE_API_KEY'
-            GROQ_API_KEY='$GROQ_API_KEY'
+          ENV_B64=$(printf 'GOOGLE_API_KEY=%s\nGROQ_API_KEY=%s\nTOP_K_RESULTS=5\nEMBEDDING_MODEL=gemini-embedding-001\nGROQ_MODEL=llama-3.3-70b-versatile\n' "$GOOGLE_API_KEY" "$GROQ_API_KEY" | base64 -w 0)
 
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" "
             set -e
-
+            APP_DIR=/opt/productsearch
             if [ ! -d \"\$APP_DIR/.git\" ]; then
               git clone https://github.com/Wikolabs/productsearch.git \$APP_DIR
             fi
-
             cd \$APP_DIR
             git pull origin main
-
             mkdir -p backend
-            cat > backend/.env << EOF
-GOOGLE_API_KEY=\$GOOGLE_API_KEY
-GROQ_API_KEY=\$GROQ_API_KEY
-TOP_K_RESULTS=5
-EMBEDDING_MODEL=gemini-embedding-001
-GROQ_MODEL=llama-3.3-70b-versatile
-EOF
-
+            printf '%s' \"$ENV_B64\" | base64 -d > backend/.env
             docker compose down --remove-orphans 2>/dev/null || true
             docker compose up -d --build
-
-            echo 'Deployed ProductSearch on http://\$VM_HOST:3032'"
+            echo 'Deployed ProductSearch on port 3032'
+          "
