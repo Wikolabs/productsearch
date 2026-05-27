@@ -4,13 +4,44 @@ import { chatStream } from "../services/chatStream";
 import type { SearchResult } from "../types";
 import ProductCard from "./ProductCard";
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_SIZE = 5 * 1024 * 1024;
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   results?: SearchResult[];
   imagePreview?: string;
+}
+
+const SUGGESTIONS = [
+  "Red wireless headphones under $100",
+  "Ergonomic office chair leather",
+  "Waterproof bluetooth speaker",
+];
+
+function BotIcon() {
+  return (
+    <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+      </svg>
+    </div>
+  );
+}
+
+function LoadingDots() {
+  return (
+    <div className="flex items-start gap-3">
+      <BotIcon />
+      <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+        <div className="flex gap-1.5 items-center h-5">
+          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ChatInterface() {
@@ -20,6 +51,7 @@ export default function ChatInterface() {
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,8 +63,7 @@ export default function ChatInterface() {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const base64 = result.split(",")[1];
-      setImageBase64(base64);
+      setImageBase64(result.split(",")[1]);
     };
     reader.readAsDataURL(file);
   }, []);
@@ -64,16 +95,12 @@ export default function ChatInterface() {
     return () => document.removeEventListener("paste", handlePaste);
   }, [processFile]);
 
-  const handleSend = async () => {
-    const text = input.trim();
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     const image = imageBase64;
     if (!text && !image) return;
 
-    const userMsg: Message = {
-      role: "user",
-      content: text,
-      imagePreview: image || undefined,
-    };
+    const userMsg: Message = { role: "user", content: text, imagePreview: image || undefined };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setImageBase64("");
@@ -81,12 +108,7 @@ export default function ChatInterface() {
 
     try {
       const results = await searchProducts(text || undefined, image || undefined);
-
-      const assistantMsg: Message = {
-        role: "assistant",
-        content: "",
-        results,
-      };
+      const assistantMsg: Message = { role: "assistant", content: "", results };
       setMessages((prev) => [...prev, assistantMsg]);
 
       let accumulated = "";
@@ -94,19 +116,13 @@ export default function ChatInterface() {
         accumulated += token;
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            content: accumulated,
-          };
+          updated[updated.length - 1] = { ...updated[updated.length - 1], content: accumulated };
           return updated;
         });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Sorry, something went wrong.";
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: message },
-      ]);
+      setMessages((prev) => [...prev, { role: "assistant", content: message }]);
     } finally {
       setLoading(false);
     }
@@ -114,11 +130,8 @@ export default function ChatInterface() {
 
   return (
     <div
-      className="flex flex-col h-full relative"
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
+      className="flex flex-col h-full relative bg-gray-50"
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={(e) => {
         if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
           setDragOver(false);
@@ -126,119 +139,117 @@ export default function ChatInterface() {
       }}
       onDrop={handleDrop}
     >
-      {/* Drag overlay */}
       {dragOver && (
-        <div className="absolute inset-0 z-50 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-lg flex items-center justify-center pointer-events-none">
-          <p className="text-blue-600 font-semibold text-lg bg-white px-6 py-3 rounded-lg shadow">
-            Drop your image here
-          </p>
+        <div className="absolute inset-0 z-50 bg-indigo-500/10 border-2 border-dashed border-indigo-400 rounded-lg flex items-center justify-center pointer-events-none">
+          <div className="bg-white px-8 py-5 rounded-2xl shadow-lg text-center">
+            <svg className="w-10 h-10 text-indigo-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+            </svg>
+            <p className="text-indigo-700 font-semibold">Drop your image here</p>
+            <p className="text-gray-400 text-sm mt-1">We'll find visually similar products</p>
+          </div>
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
         {messages.length === 0 && (
-          <div className="text-center text-gray-400 mt-20">
-            <p className="text-2xl mb-2">Search products</p>
-            <p className="text-sm">
-              Type a query, drop an image or paste it (Ctrl+V)
+          <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center px-4">
+            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-1">Find the perfect product</h2>
+            <p className="text-gray-500 text-sm mb-6 max-w-sm leading-relaxed">
+              Describe what you're looking for, or drop a product photo and our AI will find the best matches.
             </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleSend(s)}
+                  className="text-sm bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-full hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50 transition-all shadow-sm"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
-            <div
-              className={`max-w-[80%] ${
-                msg.role === "user"
-                  ? "bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5"
-                  : "space-y-3"
-              }`}
-            >
-              {msg.imagePreview && (
-                <img
-                  src={`data:image/jpeg;base64,${msg.imagePreview}`}
-                  alt="Uploaded"
-                  className="max-h-24 rounded mb-2"
-                />
-              )}
-              {msg.role === "assistant" && msg.content && (
-                <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-2.5 text-gray-800 whitespace-pre-wrap">
-                  {msg.content}
+          <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            {msg.role === "assistant" && <BotIcon />}
+            <div className={`max-w-[85%] ${msg.role === "user" ? "space-y-2" : "space-y-3"}`}>
+              {msg.role === "user" && (
+                <div className="flex flex-col items-end gap-2">
+                  {msg.imagePreview && (
+                    <img
+                      src={`data:image/jpeg;base64,${msg.imagePreview}`}
+                      alt="Uploaded"
+                      className="max-h-32 rounded-xl border border-indigo-200 shadow-sm"
+                    />
+                  )}
+                  {msg.content && (
+                    <div className="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed">
+                      {msg.content}
+                    </div>
+                  )}
                 </div>
               )}
-              {msg.role === "user" && msg.content && <p>{msg.content}</p>}
-              {msg.results && msg.results.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-                  {msg.results.map((r) => (
-                    <ProductCard key={r.product.id} result={r} />
-                  ))}
-                </div>
+              {msg.role === "assistant" && (
+                <>
+                  {msg.content && (
+                    <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 text-gray-800 text-sm leading-relaxed shadow-sm whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
+                  )}
+                  {msg.results && msg.results.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {msg.results.map((r) => (
+                        <ProductCard key={r.product.id} result={r} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
         ))}
 
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-2xl px-4 py-2.5 text-gray-500">
-              <span className="animate-pulse">Searching...</span>
-            </div>
-          </div>
-        )}
-
+        {loading && <LoadingDots />}
         <div ref={bottomRef} />
       </div>
 
-      {/* Image preview bar */}
-      {imageBase64 && (
-        <div className="px-4 pb-2 flex items-center gap-2">
-          <div className="relative inline-block">
-            <img
-              src={`data:image/jpeg;base64,${imageBase64}`}
-              alt="Preview"
-              className="h-16 rounded border border-gray-200"
-            />
-            <button
-              type="button"
-              onClick={() => setImageBase64("")}
-              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center hover:bg-red-600"
-            >
-              x
-            </button>
+      <div className="border-t border-gray-200 bg-white p-4">
+        {imageBase64 && (
+          <div className="flex items-center gap-3 mb-3 px-1">
+            <div className="relative inline-block">
+              <img
+                src={`data:image/jpeg;base64,${imageBase64}`}
+                alt="Preview"
+                className="h-14 rounded-lg border border-gray-200 shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setImageBase64("")}
+                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center hover:bg-red-600 shadow"
+              >
+                ✕
+              </button>
+            </div>
+            <span className="text-xs text-gray-400">Image ready — add a query or send directly</span>
           </div>
-          <span className="text-xs text-gray-500">Image attached</span>
-        </div>
-      )}
-
-      {/* Input */}
-      <div className="border-t border-gray-200 p-4">
-        <div className="flex gap-2 items-end">
+        )}
+        <div className="flex gap-2 items-center bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
           <label
-            className={`p-2.5 rounded-lg border transition-colors shrink-0 cursor-pointer ${
-              imageBase64
-                ? "bg-blue-100 border-blue-300 text-blue-600"
-                : "border-gray-300 text-gray-500 hover:bg-gray-50"
+            className={`p-1.5 rounded-xl cursor-pointer transition-colors shrink-0 ${
+              imageBase64 ? "text-indigo-600 bg-indigo-100" : "text-gray-400 hover:text-indigo-500 hover:bg-indigo-50"
             }`}
             title="Attach image"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <input
               type="file"
@@ -252,6 +263,7 @@ export default function ChatInterface() {
             />
           </label>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -262,15 +274,18 @@ export default function ChatInterface() {
               }
             }}
             disabled={loading}
-            placeholder="Search for products..."
-            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:opacity-50"
+            placeholder="Describe the product you're looking for..."
+            className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none disabled:opacity-50 py-1"
           />
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={loading || (!input.trim() && !imageBase64)}
-            className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 flex items-center gap-1.5"
           >
-            Send
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.269 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+            Search
           </button>
         </div>
       </div>
