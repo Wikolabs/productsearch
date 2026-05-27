@@ -31,7 +31,7 @@ services:
       - "3032:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - productsearch
 
