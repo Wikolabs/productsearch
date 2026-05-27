@@ -26,7 +26,10 @@ chat_svc = ChatService(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await load_seed_products(vector_store, embed_svc)
+    try:
+        await load_seed_products(vector_store, embed_svc)
+    except Exception as e:
+        logger.error("Seed loading failed (server starts without seed data): %s", e)
     yield
 
 
