@@ -29,7 +29,7 @@ export default function App() {
             </svg>
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-900 leading-none">ProductSearch</h1>
+            <h1 className="text-base font-bold text-gray-900 leading-none">Botsika.com</h1>
             <p className="text-xs text-gray-400 mt-0.5">AI-powered product discovery</p>
           </div>
         </div>
